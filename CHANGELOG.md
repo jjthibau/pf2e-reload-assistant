@@ -1,6 +1,6 @@
 # Changes
 
-## 0.1.0 — local development
+## 0.1.0 — 2026-10-18
 
 - Default ammunition dropdown in native reloadable weapon panels.
 - Automatic outside-combat loading and explicit default swaps.
