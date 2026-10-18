@@ -1,0 +1,17 @@
+.reload-assistant-default{display:flex;align-items:center;gap:8px;margin:5px 0;width:100%;font-size:12px;}
+.reload-assistant-default>span{white-space:nowrap;font-family:var(--serif,serif);}
+.reload-assistant-default select{flex:1;min-width:0;font-size:12px;height:26px;}
+@supports(appearance:base-select){
+ .reload-assistant-default select,.reload-assistant-default select::picker(select){appearance:base-select;}
+ .reload-assistant-default select::picker(select){background:light-dark(#f1ede4,#302831);color:light-dark(#222,#efe6d8);border:1px solid #85725c;border-radius:2px;padding:3px;font:12px var(--font-primary,sans-serif);max-height:260px;}
+ .reload-assistant-default select option{padding:5px 8px;}
+ .reload-assistant-default select option:checked{background:light-dark(#dcccb3,#594c3e);color:light-dark(#221b13,#fff3dd);}
+ .reload-assistant-default select option:hover{background:#a58b6355;}
+}
+.reload-assistant-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:6px;border-top:1px solid var(--color-border-light-2,#8885);}
+.reload-assistant-controls button{flex:1;min-height:28px;}
+.reload-assistant-controls small{width:100%;font-size:11px;color:var(--color-text-secondary);}
+.reload-assistant-empty h3{font:500 21px var(--serif-condensed,serif);margin:4px 0;border:0;}
+.reload-assistant-empty p{margin:6px 0;font-size:13px;}
+.reload-assistant-empty select{width:100%;margin:6px 0;}
+.reload-assistant-empty button{width:100%;}

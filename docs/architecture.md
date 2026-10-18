@@ -1,0 +1,17 @@
+# Native loading integration
+
+This original module uses PF2e Weapon.attach and loaded Ammo.detach operations. It does not maintain a parallel loaded/unloaded effect ledger. Foundry/PF2e assets and actor data are not distributed.
+
+Default ammunition preferences contain an item ID, display name and canonical identity derived from source type/name/system/flags. Quantity, carry/container placement, migration bookkeeping and remaining magazine uses are omitted from identity; damage rules, material, identification and other mechanical differences remain. Matching a default rechecks current compatible, accessible inventory rather than trusting an exhausted/deleted stack ID or name alone. Partial magazines retain their actual uses when loaded.
+
+Inventory mutations are serialized per actor on its active primary updater, with an active owner fallback. Owner requests go through the module socket and are checked for ownership. Full-weapon reloads do nothing, and unresolved exhaustion messages are reused. Selection revalidates actual ammunition at request time. This coordinates the module's operations; it is not a transaction encompassing every unrelated module or manual inventory edit. Native detach/attach can involve multiple database operations, so an interrupted swap may leave returned rounds in inventory for recovery.
+
+Automatic loading checks every started encounter for actor membership. It fills configured weapons outside combat; a single available ammo stack may be adopted automatically. Multiple unselected choices require the player to choose. Explicit default changes outside combat return usable loaded rounds and refill from the new default. In combat, preferences change the next load, while a Reload operation adds one round or magazine. Repeating magazines use native capacity/uses; reload-zero weapons do not receive the reload-positive Strike button. Compound class/feat actions and additional cocking mechanics are not independently simulated.
+
+Each eligible native attack card retains the weapon's ammunition subitems at fire time. Its damage/critical methods use a temporary clone restoring those subitems so reloading a different ammunition does not change that attack's damage rules. The persistent actor/inventory is not rewritten for this damage calculation. Native chat damage and matching checkContext references are supported. Other modules' custom damage pipelines require compatibility testing.
+
+Ignore reloading and ammunition is default off. While on, wrapped native PC Strike variants pass consumeAmmo:false, skip native ammunition requirements, and all module loading/prompts stop. Inventory is untouched. Reload traits and persistent weapon data are not changed. The original native enforcement applies when disabled; the module does not reconstruct expenditure during ignored play.
+
+## Scope
+
+Native character inventory weapons on Foundry14.369/PF2e8.6.0 are the implementation target. NPC Melee-item mapping, gunslinger compound actions, jam handling and Ranged Combat/Workbench/HUD integration are not claimed. Existing effects are preserved; the module does not infer poison charges or manufacture poison effects from ammunition names. Campaign data and private test fixtures do not ship in the module.
