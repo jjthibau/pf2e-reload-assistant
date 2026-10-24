@@ -5,7 +5,11 @@ const copy=v=>foundry.utils.deepClone(v);
 export const ignored=()=>game.settings.get(ID,'ignoreAmmunition');
 export const eligible=w=>w?.isOfType?.('weapon')&&w.quantity>0&&w.actor?.isOfType('character')&&w.isRanged&&!w.isThrown&&!w.system.ammo?.builtIn&&Number(w.system.ammo?.capacity)>0;
 const needsButton=w=>eligible(w)&&Number(w.reload)>0;
-export const inCombat=a=>game.combats.some(c=>c.started&&c.combatants.some(t=>t.actor?.uuid===a.uuid));
+export const inCombat=a=>game.combats.some(c=>c.started&&c.combatants.some(t=>{
+ if(t.actorId!==a.id)return false;
+ const token=t.token;
+ return a.isToken?token?.uuid===a.token.uuid:!token||token.actorLink;
+}));
 const authority=a=>{const primary=a.primaryUpdater;return primary?.active?primary:game.users.filter(u=>u.active&&a.testUserPermission(u,'OWNER')).sort((a,b)=>a.id.localeCompare(b.id))[0];};
 const owned=a=>a?.isOwner;
 const nativeAmmo=w=>w.subitems.filter(i=>i.isOfType('ammo','weapon')&&i.isAmmoFor(w));
@@ -214,4 +218,9 @@ Hooks.on('preCreateChatMessage',message=>{
 });
 for(const hook of ['createItem','updateItem','deleteItem'])Hooks.on(hook,item=>{schedule(item.actor);refreshCards(item.actor);});
 Hooks.on('updateActor',actor=>schedule(actor));
-for(const hook of ['deleteCombat','updateCombat'])Hooks.on(hook,()=>{for(const a of game.actors)schedule(a);for(const scene of game.scenes)for(const t of scene.tokens)if(!t.actorLink)schedule(t.actor);});
+function scheduleCombatParticipants(combat){
+ const actors=new Map();for(const c of combat.combatants){const actor=c.actor;if(actor)actors.set(actor.uuid,actor);}
+ for(const actor of actors.values())schedule(actor);
+}
+Hooks.on('deleteCombat',scheduleCombatParticipants);
+Hooks.on('updateCombat',(combat,changes)=>{if(changes.round===0)scheduleCombatParticipants(combat);});

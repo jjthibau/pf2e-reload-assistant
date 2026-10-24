@@ -24,5 +24,8 @@
 /tools/*
 !/tools/build_release.py
 !/tools/check_release.py
+!/tests/
+/tests/*
+!/tests/combat-scope.test.mjs
 **/__pycache__/
 **/*.pyc
