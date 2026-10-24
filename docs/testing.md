@@ -1,5 +1,7 @@
 # Testing
 
+Version 0.1.2 adds six focused native checks for first saving the unchanged ignore-ammunition default, repeated values, both real mode changes, and native party dependencies. Unchanged values caused zero actor resets. Real mode changes refreshed characters and native party data, with zero NPC resets or off-scene token actor reads. These checks passed without browser errors on Foundry14.369/PF2e8.6.0; the earlier broad ammunition suite was not repeated for this settings-only change.
+
 Public CI checks JavaScript syntax, combat membership and event scope, manifest/version consistency, the exact release archive allowlist, source/archive byte parity and checksums. The scope regressions reject world-wide scans during combat updates and verify linked and unlinked identity without materializing actors. These checks do not launch Foundry or establish gameplay compatibility.
 
 Before initial publication,83 native assertions passed across the main workflow, edge/UI and Reload0 suites on Foundry14.369/PF2e8.6.0. They exercised actual character sheets, chat controls, native ammunition operations and GM/player clients in an isolated licensed installation. Test worlds, actor exports and licensed packs are private and are not included in this repository.

@@ -1,5 +1,10 @@
 # Changes
 
+## 0.1.2 - 2026-10-23
+
+- Skip actor preparation when the ignore-ammunition setting is first saved with its unchanged default, or receives an equivalent value.
+- Refresh characters and their native dependencies on real mode changes, without rebuilding unrelated NPCs or accessing off-scene token actors.
+
 ## 0.1.1 ? 2026-10-23
 
 - Stop scanning every world's actors and tokens when combat starts or a turn changes. Only the affected participants are checked when their encounter is deleted or reset.

@@ -1,5 +1,6 @@
 export const ID='pf2e-reload-assistant';
 const socket=`module.${ID}`,queues=new Map(),timers=new Map(),busy=new Set(),pending=new Map(),seen=new Set();
+let ignoreMode;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const copy=v=>foundry.utils.deepClone(v);
 export const ignored=()=>game.settings.get(ID,'ignoreAmmunition');
@@ -191,13 +192,16 @@ function refreshCards(actor){
 }
 
 Hooks.once('init',()=>{
- game.settings.register(ID,'ignoreAmmunition',{name:'Ignore reloading and ammunition',hint:'Allow attacks without loaded rounds or inventory ammunition. No automatic consumption, loading, or reload prompts. Players handle any tracking themselves.',scope:'world',config:true,type:Boolean,default:false,onChange:()=>{
-  for(const a of game.actors){a.reset();for(const app of Object.values(a.apps))if(app.rendered)app.render(false);}
+ game.settings.register(ID,'ignoreAmmunition',{name:'Ignore reloading and ammunition',hint:'Allow attacks without loaded rounds or inventory ammunition. No automatic consumption, loading, or reload prompts. Players handle any tracking themselves.',scope:'world',config:true,type:Boolean,default:false,onChange:value=>{
+  const previous=ignoreMode;ignoreMode=value;if(!game.ready||previous===undefined||previous===value)return;
+  const actors=new Set([...game.actors,...(canvas.scene?.tokens.map(t=>t.actor).filter(Boolean)??[])]);
+  for(const a of actors){if(!a.isOfType('character'))continue;a.reset();for(const app of Object.values(a.apps))if(app.rendered)app.render(false);}
   for(const el of document.querySelectorAll('.message[data-message-id]')){el.querySelector('.reload-assistant-controls')?.remove();el.querySelector('.reload-assistant-choices')?.remove();const message=game.messages.get(el.dataset.messageId);if(message)renderMessage(message,el);}
  }});
  installStrikes();
 });
 Hooks.once('ready',()=>{
+ ignoreMode=ignored();
  game.socket.on(socket,async data=>{
   if(data.reply&&data.to===game.user.id){const wait=pending.get(data.id);if(wait){clearTimeout(wait.timer);pending.delete(data.id);data.error?wait.reject(Error(data.error)):wait.resolve(data.result);}return;}
   const r=data.request;if(!r||r.to!==game.user.id||seen.has(r.id))return;
