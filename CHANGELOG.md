@@ -1,5 +1,9 @@
 # Changes
 
+## 0.1.3 - 2026-11-18
+
+- Resolve old depletion notices on successful reload, honor the selected magazine, reload after individual combatant removal, and refresh matching chat controls.
+
 ## 0.1.2 - 2026-10-23
 
 - Skip actor preparation when the ignore-ammunition setting is first saved with its unchanged default, or receives an equivalent value.

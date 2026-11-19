@@ -28,7 +28,11 @@ export function identity(ammo){
  return stable({type:data.type,name:data.name,system,flags:data.flags??{}});
 }
 const preference=w=>w.getFlag(ID,'defaultAmmo');
-export const defaultAmmo=w=>{const p=preference(w);return p?compatible(w).find(a=>identity(a)===p.identity)??null:null;};
+export const defaultAmmo=w=>{
+ const p=preference(w);if(!p)return null;
+ const reserve=compatible(w),preferred=reserve.find(a=>a.id===p.id);
+ return preferred&&identity(preferred)===p.identity?preferred:reserve.find(a=>identity(a)===p.identity)??null;
+};
 const serialize=(actor,fn)=>{const prior=queues.get(actor.uuid)??Promise.resolve();const next=prior.catch(()=>{}).then(fn);queues.set(actor.uuid,next);next.finally(()=>{if(queues.get(actor.uuid)===next)queues.delete(actor.uuid);}).catch(()=>{});return next;};
 
 async function remember(w,ammo){await w.setFlag(ID,'defaultAmmo',{id:ammo.id,name:ammo.name,identity:identity(ammo)});}
@@ -38,6 +42,13 @@ async function exhaustion(w){
  const p=preference(w),users=game.users.filter(u=>u.isGM||w.actor.testUserPermission(u,'OWNER')).map(u=>u.id);
  return ChatMessage.create({speaker:ChatMessage.getSpeaker({actor:w.actor}),whisper:users,content:`<section class="reload-assistant-empty"><h3>Ammunition needed</h3><p><strong>${esc(w.name)}</strong>: ${p?`${esc(p.name)} is unavailable.`:'Choose default ammunition.'}</p><p>Choose compatible ammunition to set as default and reload.</p></section>`,flags:{[ID]:{exhaustion:{weapon:w.uuid}}}});
 }
+async function resolveExhaustion(w){
+ for(const message of game.messages){
+  if(message.getFlag(ID,'exhaustion')?.weapon===w.uuid&&!message.getFlag(ID,'resolved')&&message.canUserModify(game.user,'update')){
+   await message.setFlag(ID,'resolved',true);
+  }
+ }
+}
 
 async function load(w,{all=false,notify=true}={}){
  if(!eligible(w)||ignored())return {status:'ignored'};
@@ -46,7 +57,8 @@ async function load(w,{all=false,notify=true}={}){
  if(!preference(w)&&compatible(w).length===1){ammo=compatible(w)[0];await remember(w,ammo);}
  if(!ammo){if(notify)await exhaustion(w);return {status:'empty'};}
  const amount=Math.min(ammo.quantity,all?capacity(w)-count(w):1);
- if(amount>0)await w.attach(ammo,{quantity:amount,stack:true});
+ if(amount<=0||!await w.attach(ammo,{quantity:amount,stack:true}))throw Error('PF2e did not load that ammunition.');
+ try{await resolveExhaustion(w);}catch(error){console.error(ID,'Could not resolve the old ammunition notice.',error);}
  return {status:'loaded',quantity:amount};
 }
 
@@ -58,7 +70,7 @@ async function setDefault(w,ammoId,{reload=false}={}){
  await remember(w,ammo);
  if(!inCombat(w.actor)){
   // Native detach returns every still-usable old round; spent rounds must never be refunded.
-  if(previous?.identity!==nextIdentity)for(const old of [...loaded(w)])await old.detach({skipConfirm:true});
+  if(previous?.identity!==nextIdentity||ammo.isOfType('ammo')&&ammo.isMagazine&&previous?.id!==ammo.id)for(const old of [...loaded(w)])await old.detach({skipConfirm:true});
   return load(w,{all:true});
  }
  return reload?load(w):{status:'selected'};
@@ -83,10 +95,6 @@ async function execute(request){
    if(request.action==='default')response=await setDefault(w,request.ammo,{reload:request.reload});
    else if(request.action==='reload')response=await load(w,{all:!inCombat(actor)});
    else throw Error('Unknown reload action.');
-   if(request.card&&response.status==='loaded'){
-    const card=game.messages.get(request.card);
-    if(card?.getFlag(ID,'exhaustion')?.weapon===w.uuid)await card.setFlag(ID,'resolved',true);
-   }
    return response;
   }finally{busy.delete(actor.uuid);}
  });
@@ -160,11 +168,20 @@ function renderSheet(sheet,html){
   panel.append(label);
  }
 }
-function renderMessage(message,html){
+const mountedCards=new Map(),cardRefreshes=new Map();
+function trackCard(root,message,weapon){
+ const entries=mountedCards.get(weapon.actor.uuid)??new Map();
+ for(const [ref,entry] of entries){const el=ref.deref();if(!el||el===root||el.isConnected===false&&entry.seenMounted)entries.delete(ref);}
+ entries.set(new WeakRef(root),{message,weapon:weapon.uuid,seenMounted:root.isConnected});
+ mountedCards.set(weapon.actor.uuid,entries);
+}
+function renderMessage(message,html,track=true){
  const root=html instanceof HTMLElement?html:html[0];
  const exhaustion=message.getFlag(ID,'exhaustion');
  if(exhaustion){
-  const w=fromUuidSync(exhaustion.weapon);if(!eligible(w)||!owned(w.actor)||ignored()||root.querySelector('.reload-assistant-choices'))return;
+  const w=fromUuidSync(exhaustion.weapon);if(!eligible(w)||!owned(w.actor)||root.querySelector('.reload-assistant-choices'))return;
+  if(track)trackCard(root,message,w);
+  if(ignored())return;
   const section=document.createElement('div');section.className='reload-assistant-choices';
   if(message.getFlag(ID,'resolved'))section.innerHTML='<p>Ammunition selected and loaded.</p>';
   else{const choices=compatible(w);section.innerHTML=choices.length?`<select aria-label="Replacement ammunition">${choices.map(a=>`<option value="${esc(a.id)}">${esc(a.name)} (${a.quantity})</option>`).join('')}</select><button type="button">Set default &amp; reload</button>`:'<p>No compatible ammunition remains in inventory.</p>';
@@ -172,23 +189,37 @@ function renderMessage(message,html){
   }
   root.querySelector('.reload-assistant-empty')?.append(section);return;
  }
- if(ignored()||!message.isContentVisible||root.querySelector('.reload-assistant-controls'))return;
+ if(!message.isContentVisible||root.querySelector('.reload-assistant-controls'))return;
  const shot=message.getFlag(ID,'shot'),w=shot?fromUuidSync(shot.weapon):null;
  if(!needsButton(w)||!owned(w.actor))return;
+ if(track)trackCard(root,message,w);
+ if(ignored())return;
  const controls=document.createElement('div');controls.className='reload-assistant-controls';
  const full=count(w)>=capacity(w);
  controls.innerHTML=`<button type="button" ${full?'disabled':''}><i class="fa-solid fa-rotate-right" inert></i> ${full?'Loaded':`Reload <span class="action-glyph">${esc(cost(w))}</span>`}</button><small>Default: ${esc(preference(w)?.name??'not selected')} · Loaded ${count(w)}/${capacity(w)}</small>`;
  controls.querySelector('button').addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;try{await request('reload',w);}catch(err){ui.notifications.error(err.message);}finally{button.disabled=false;}});
  (root.querySelector('.message-content')??root).append(controls);
 }
-function refreshCards(actor){
- if(!actor)return;
- for(const el of document.querySelectorAll('.message[data-message-id]')){
-  const message=game.messages.get(el.dataset.messageId),flags=message?.flags[ID];
-  const uuid=flags?.shot?.weapon??flags?.exhaustion?.weapon;
-  if(!uuid?.startsWith(actor.uuid+'.'))continue;
-  el.querySelector('.reload-assistant-controls')?.remove();el.querySelector('.reload-assistant-choices')?.remove();renderMessage(message,el);
+function refreshCards(actorUUID,changed){
+ const entries=mountedCards.get(actorUUID);
+ if(!entries)return;
+ for(const [ref,entry] of entries){
+  const el=ref.deref();
+  if(!el?.isConnected){entries.delete(ref);continue;}
+  entry.seenMounted=true;
+  const weapon=fromUuidSync(entry.weapon);
+  if(changed&&!changed.some(item=>item.uuid===entry.weapon||item.parentItem?.uuid===entry.weapon||(item.isOfType('ammo','weapon')&&weapon&&item.isAmmoFor(weapon))||item.isOfType('backpack')))continue;
+  el.querySelector('.reload-assistant-controls')?.remove();el.querySelector('.reload-assistant-choices')?.remove();renderMessage(entry.message,el,false);
  }
+ if(!entries.size)mountedCards.delete(actorUUID);
+}
+function queueCardRefresh(item){
+ const uuid=item.actor?.uuid;
+ if(!mountedCards.has(uuid)||!item.isOfType('ammo','weapon','backpack'))return;
+ const queued=cardRefreshes.get(uuid);
+ if(queued){queued.set(item.uuid,item);return;}
+ const changed=new Map([[item.uuid,item]]);cardRefreshes.set(uuid,changed);
+ queueMicrotask(()=>{cardRefreshes.delete(uuid);refreshCards(uuid,[...changed.values()]);});
 }
 
 Hooks.once('init',()=>{
@@ -196,7 +227,7 @@ Hooks.once('init',()=>{
   const previous=ignoreMode;ignoreMode=value;if(!game.ready||previous===undefined||previous===value)return;
   const actors=new Set([...game.actors,...(canvas.scene?.tokens.map(t=>t.actor).filter(Boolean)??[])]);
   for(const a of actors){if(!a.isOfType('character'))continue;a.reset();for(const app of Object.values(a.apps))if(app.rendered)app.render(false);}
-  for(const el of document.querySelectorAll('.message[data-message-id]')){el.querySelector('.reload-assistant-controls')?.remove();el.querySelector('.reload-assistant-choices')?.remove();const message=game.messages.get(el.dataset.messageId);if(message)renderMessage(message,el);}
+  for(const uuid of mountedCards.keys())refreshCards(uuid);
  }});
  installStrikes();
 });
@@ -220,11 +251,12 @@ Hooks.on('preCreateChatMessage',message=>{
  if(!eligible(w))return;
  message.updateSource({flags:{[ID]:{shot:{weapon:w.uuid,subitems:copy(w.toObject().system.subitems??[])}}}});
 });
-for(const hook of ['createItem','updateItem','deleteItem'])Hooks.on(hook,item=>{schedule(item.actor);refreshCards(item.actor);});
+for(const hook of ['createItem','updateItem','deleteItem'])Hooks.on(hook,item=>{schedule(item.actor);queueCardRefresh(item);});
 Hooks.on('updateActor',actor=>schedule(actor));
 function scheduleCombatParticipants(combat){
  const actors=new Map();for(const c of combat.combatants){const actor=c.actor;if(actor)actors.set(actor.uuid,actor);}
  for(const actor of actors.values())schedule(actor);
 }
 Hooks.on('deleteCombat',scheduleCombatParticipants);
+Hooks.on('deleteCombatant',combatant=>schedule(combatant.actor));
 Hooks.on('updateCombat',(combat,changes)=>{if(changes.round===0)scheduleCombatParticipants(combat);});
